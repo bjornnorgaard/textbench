@@ -3,6 +3,7 @@ package textbench
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,19 +27,32 @@ func Evaluate(ctx context.Context, path string) (float32, error) {
 		}
 	}(file)
 
-	reader := bufio.NewReader(file)
-	bufferSize := 1024
-	buffer := make([]byte, 0, bufferSize)
+	windowSize := 1024
+	// Use a buffer size larger than the window to avoid constant memory shifts during Discard
+	reader := bufio.NewReaderSize(file, windowSize*2)
 
-	bytesRead, err := reader.Read(buffer[:cap(buffer)])
-	buffer = buffer[:bytesRead]
-	fmt.Println(string(buffer))
+	for {
+		window, err := reader.Peek(windowSize)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			slog.ErrorContext(ctx, "failed to peek window", slog.Any("err", err))
+			return 0.0, err
+		}
 
-	if err != nil && err != io.EOF {
-		slog.ErrorContext(ctx, "failed to read chunk", slog.Any("err", err))
+		// Process the window (placeholder for actual evaluation logic)
+		_ = window
+
+		// Slide the window by 1 byte
+		_, err = reader.Discard(1)
+		if err != nil {
+			slog.ErrorContext(ctx, "failed to slide window", slog.Any("err", err))
+			return 0.0, err
+		}
 	}
 
-	return 0.0, err
+	return 0.0, nil
 }
 
 func readChunk(reader *bufio.Reader, offset, length int) (int, []byte, error) {

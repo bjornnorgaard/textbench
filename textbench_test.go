@@ -12,7 +12,7 @@ import (
 
 func Test_readChunk(t *testing.T) {
 	expected := "Ishmael"
-	path := filepath.Join(".", "data", "moby-dick.txt")
+	path := filepath.Join(".", "data", "moby-dick-0.txt")
 	f, err := os.Open(path)
 	require.NoError(t, err)
 	reader := bufio.NewReader(f)
