@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
-	"os"
 	"path/filepath"
+
+	"github.com/bjornnorgaard/textbench"
 )
 
 var (
@@ -11,10 +13,11 @@ var (
 )
 
 func main() {
-	bytes, err := os.ReadFile(moby)
+	ctx := context.Background()
+	evaluate, err := textbench.Evaluate(ctx, moby)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println(string(bytes))
+	log.Printf("evaluate: %f", evaluate)
 }
