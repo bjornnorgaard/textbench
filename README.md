@@ -1,5 +1,9 @@
 # Textbench
 
+Text evaluation + benchmarking package.
+
+Goal: compare two text strings robustly even with punctuation/case/Unicode noise. Output simple numeric distance score (lower better) after normalization. Includes CLI stub + bundled `data/` fixtures for tests/bench runs.
+
 ## Algorithm (so far)
 
 `EvaluateString(a, b)` does:
