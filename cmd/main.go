@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	moby = filepath.Join(".", "data", "moby-dick.txt")
+	moby = filepath.Join(".", "data", "moby-dick", "moby-dick-0.md")
 )
 
 func main() {

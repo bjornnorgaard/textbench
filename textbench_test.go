@@ -1,6 +1,10 @@
 package textbench
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,6 +38,57 @@ func TestEvaluateString(t *testing.T) {
 	assert.True(t, s1 < s2)
 	assert.True(t, s2 < s3)
 	assert.True(t, s3 < s4)
+}
+
+func TestEvaluateString_DataFilesOrdering(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("data", "moby-dick", "moby-dick-*.md"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+
+	re := regexp.MustCompile(`moby-dick-(\d+)\.md$`)
+	type item struct {
+		path  string
+		level int
+		text  string
+	}
+
+	var items []item
+	for _, p := range files {
+		m := re.FindStringSubmatch(p)
+		require.NotNil(t, m, "unexpected file name: %s", p)
+		level := 0
+		for i := 0; i < len(m[1]); i++ {
+			level = level*10 + int(m[1][i]-'0')
+		}
+
+		b, readErr := os.ReadFile(p)
+		require.NoError(t, readErr)
+		items = append(items, item{path: p, level: level, text: string(b)})
+	}
+
+	sort.Slice(items, func(i, j int) bool { return items[i].level < items[j].level })
+	require.GreaterOrEqual(t, len(items), 2)
+
+	correct := items[0].text
+	same, err := EvaluateString(correct, correct)
+	require.NoError(t, err)
+	require.Equal(t, 0, same)
+
+	prev := -1
+	for _, it := range items {
+		score, evalErr := EvaluateString(correct, it.text)
+		require.NoError(t, evalErr, "file: %s", it.path)
+		if prev >= 0 {
+			require.GreaterOrEqual(t, score, prev, "non-monotonic at %s", it.path)
+		}
+		prev = score
+	}
+
+	firstScore, err := EvaluateString(correct, items[0].text)
+	require.NoError(t, err)
+	lastScore, err := EvaluateString(correct, items[len(items)-1].text)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, lastScore, firstScore)
 }
 
 func TestCaseNormalization(t *testing.T) {
