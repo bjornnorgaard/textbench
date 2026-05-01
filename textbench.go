@@ -2,16 +2,13 @@ package textbench
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 )
 
-var ErrRejected = errors.New("rejected")
-
-type PipelineFunc func(string) (string, error)
+type PipelineFunc func(string) string
 
 func EvaluateString(a, b string) (int, error) {
 	if a == "" || b == "" {
@@ -19,71 +16,62 @@ func EvaluateString(a, b string) (int, error) {
 	}
 
 	stages := []PipelineFunc{
-		// Reject inputs that need whitespace normalization (leading/trailing or
-		// repeated runs of whitespace).
+		// Whitespace normalization.
 		WhitespaceCleaning(),
 		// Unicode normalization (standardize special chars/diacritics).
 		UnicodeNormalizationFunc(),
-		// Reject remaining non-ASCII after normalization.
+		// Strip any remaining non-ASCII (post-normalization).
 		NonASCIIFunc(),
-		// Normalization stage. Currently no-op for scoring, but runs helper in pipeline.
+		// Punctuation removal.
+		PunctuationRemovalFunc(),
+		// Digits -> words.
+		NumberStandardizationFunc(),
+		// Case normalization.
 		CaseNormalization(),
+		// Final whitespace normalization after transforms.
+		WhitespaceCleaning(),
 	}
 
 	for _, stage := range stages {
-		var err error
-		a, err = stage(a)
-		if err != nil && errors.Is(err, ErrRejected) {
-			return 0, nil
-		}
-		if err != nil {
-			return 0, err
-		}
+		a = stage(a)
 	}
 
 	for _, stage := range stages {
-		var err error
-		b, err = stage(b)
-		if err != nil && errors.Is(err, ErrRejected) {
-			return 0, nil
-		}
-		if err != nil {
-			return 0, err
-		}
+		b = stage(b)
 	}
 
-	return 1, nil
+	// Lower score better. 0 means identical after normalization.
+	return wordEditDistance(strings.Fields(a), strings.Fields(b)), nil
 }
 
 func CaseNormalization() PipelineFunc {
-	return func(s string) (string, error) {
-		return strings.ToLower(s), nil
+	return func(s string) string {
+		return strings.ToLower(s)
 	}
 }
 
 func WhitespaceCleaning() PipelineFunc {
-	return func(s string) (string, error) {
+	return func(s string) string {
 		// Fields splits on any whitespace and drops empty runs; joining collapses
 		// repeated whitespace (including leading/trailing) into single spaces.
-		normalized := strings.Join(strings.Fields(s), " ")
-		if normalized != s {
-			return s, ErrRejected
-		}
-		return s, nil
+		return strings.Join(strings.Fields(s), " ")
 	}
 }
 
 func NonASCIIFunc() PipelineFunc {
-	return func(s string) (string, error) {
-		if !isASCII(s) {
-			return s, ErrRejected
-		}
-		return s, nil
+	return func(s string) string {
+		// Strip any remaining non-ASCII runes.
+		return strings.Map(func(r rune) rune {
+			if r > 0x7F {
+				return -1
+			}
+			return r
+		}, s)
 	}
 }
 
 func UnicodeNormalizationFunc() PipelineFunc {
-	return func(s string) (string, error) {
+	return func(s string) string {
 		// 1) Compatibility normalize (fold some "special" forms to standard forms)
 		// 2) Decompose, then drop combining marks (strip diacritics)
 		n := norm.NFKC.String(s)
@@ -93,24 +81,24 @@ func UnicodeNormalizationFunc() PipelineFunc {
 			}
 			return r
 		}, norm.NFD.String(n))
-		return out, nil
+		return out
 	}
 }
 
 func PunctuationRemovalFunc() PipelineFunc {
-	return func(s string) (string, error) {
+	return func(s string) string {
 		out := strings.Map(func(r rune) rune {
 			if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsSpace(r) {
 				return r
 			}
 			return -1
 		}, s)
-		return out, nil
+		return out
 	}
 }
 
 func NumberStandardizationFunc() PipelineFunc {
-	return func(s string) (string, error) {
+	return func(s string) string {
 		runes := []rune(s)
 		var b strings.Builder
 		b.Grow(len(s))
@@ -152,7 +140,7 @@ func NumberStandardizationFunc() PipelineFunc {
 			}
 		}
 
-		return b.String(), nil
+		return b.String()
 	}
 }
 
@@ -190,6 +178,53 @@ func isASCII(s string) bool {
 		}
 	}
 	return true
+}
+
+func wordEditDistance(a, b []string) int {
+	// Levenshtein distance over tokens.
+	// dp[j] holds distance for prefix a[:i] vs b[:j].
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+
+	dp := make([]int, len(b)+1)
+	for j := 0; j <= len(b); j++ {
+		dp[j] = j
+	}
+
+	for i := 1; i <= len(a); i++ {
+		prevDiag := dp[0]
+		dp[0] = i
+		for j := 1; j <= len(b); j++ {
+			old := dp[j]
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			ins := dp[j] + 1
+			del := dp[j-1] + 1
+			sub := prevDiag + cost
+			dp[j] = min3(ins, del, sub)
+			prevDiag = old
+		}
+	}
+	return dp[len(b)]
+}
+
+func min3(a, b, c int) int {
+	if a < b {
+		if a < c {
+			return a
+		}
+		return c
+	}
+	if b < c {
+		return b
+	}
+	return c
 }
 
 // Evaluate is used by the CLI package. It's currently a minimal placeholder

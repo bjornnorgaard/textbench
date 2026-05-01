@@ -3,59 +3,37 @@ package textbench
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestEvaluateString(t *testing.T) {
-	type args struct {
-		a string
-		b string
-	}
-	tests := []struct {
-		name string
-		want int
-		args args
-	}{
-		{"empty strings", 0, args{
-			"",
-			""},
-		},
-		{"identical strings", 1, args{
-			"hello",
-			"hello"},
-		},
-		{"whitespace difference", 0, args{
-			"hello ",
-			"hello"},
-		},
-		{"non-empty strings", 1, args{
-			"hello",
-			"world"},
-		},
-		{"casing only difference", 1, args{
-			"Hello",
-			"hello"},
-		},
-		{"pluralization only difference", 1, args{
-			"world",
-			"worlds"},
-		},
-		{"symbol difference", 1, args{
-			"héllo",
-			"hello"},
-		},
-		{"symbol difference", 1, args{
-			"héllo",
-			"hello"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := EvaluateString(tt.args.a, tt.args.b)
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
-		})
-	}
+	var (
+		correct = "Captain Ahab stood on the deck and watched the endless sea as the crew prepared the ropes and sails."
+		minor   = "Captain Ahab stood on the desk and watched the endless see as the crew prepared the rope and sails."
+		medium  = "Captain Ahab stood on deck and watched endless sea as crew prepared ropes and sails."
+		bad     = "Captn Ahhab stood deck watched endles sea; crew prepare rope sail."
+		worst   = "Yesterday we drove to town and forgot the groceries while the radio played loudly."
+	)
+
+	s0, err := EvaluateString(correct, correct)
+	require.NoError(t, err)
+	require.Equal(t, 0, s0)
+
+	s1, err := EvaluateString(correct, minor)
+	require.NoError(t, err)
+	s2, err := EvaluateString(correct, medium)
+	require.NoError(t, err)
+	s3, err := EvaluateString(correct, bad)
+	require.NoError(t, err)
+	s4, err := EvaluateString(correct, worst)
+	require.NoError(t, err)
+
+	// Expect strict improvement ordering in broad strokes:
+	assert.True(t, s0 < s1)
+	assert.True(t, s1 < s2)
+	assert.True(t, s2 < s3)
+	assert.True(t, s3 < s4)
 }
 
 func TestCaseNormalization(t *testing.T) {
@@ -75,8 +53,7 @@ func TestCaseNormalization(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := CaseNormalization()(tt.args.s)
-			require.NoError(t, err)
+			s := CaseNormalization()(tt.args.s)
 			require.Equal(t, tt.want, s)
 		})
 	}
@@ -87,25 +64,24 @@ func TestWhitespaceCleaning(t *testing.T) {
 		s string
 	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr error
+		name string
+		args args
+		want string
 	}{
-		{"empty string", args{""}, nil},
-		{"no spaces", args{"hello"}, nil},
-		{"single space between words", args{"hello world"}, nil},
-		{"leading spaces", args{"  hello"}, ErrRejected},
-		{"trailing spaces", args{"hello  "}, ErrRejected},
-		{"leading and trailing spaces", args{"  hello  "}, ErrRejected},
-		{"multiple spaces between words", args{"hello  world"}, ErrRejected},
-		{"leading, trailing and multiple spaces", args{"  hello  world  "}, ErrRejected},
-		{"multiple consecutive spaces in multiple places", args{"  hello   world  test  "}, ErrRejected},
+		{"empty string", args{""}, ""},
+		{"no spaces", args{"hello"}, "hello"},
+		{"single space between words", args{"hello world"}, "hello world"},
+		{"leading spaces", args{"  hello"}, "hello"},
+		{"trailing spaces", args{"hello  "}, "hello"},
+		{"leading and trailing spaces", args{"  hello  "}, "hello"},
+		{"multiple spaces between words", args{"hello  world"}, "hello world"},
+		{"leading, trailing and multiple spaces", args{"  hello  world  "}, "hello world"},
+		{"multiple consecutive spaces in multiple places", args{"  hello   world  test  "}, "hello world test"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := WhitespaceCleaning()(tt.args.s)
-			require.ErrorIs(t, err, tt.wantErr)
-			require.Equal(t, tt.args.s, s)
+			s := WhitespaceCleaning()(tt.args.s)
+			require.Equal(t, tt.want, s)
 		})
 	}
 }
@@ -115,19 +91,17 @@ func TestNonASCIIFunc(t *testing.T) {
 		s string
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr error
+		name string
+		args args
+		want string
 	}{
-		{"empty string", args{""}, "", nil},
-		{"ascii", args{"hello world"}, "hello world", nil},
-		{"accented", args{"héllo"}, "héllo", ErrRejected},
+		{"empty string", args{""}, ""},
+		{"ascii", args{"hello world"}, "hello world"},
+		{"accented stripped", args{"héllo"}, "hllo"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := NonASCIIFunc()(tt.args.s)
-			require.ErrorIs(t, err, tt.wantErr)
+			s := NonASCIIFunc()(tt.args.s)
 			require.Equal(t, tt.want, s)
 		})
 	}
@@ -149,8 +123,7 @@ func TestUnicodeNormalizationFunc(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := UnicodeNormalizationFunc()(tt.args.s)
-			require.NoError(t, err)
+			s := UnicodeNormalizationFunc()(tt.args.s)
 			require.Equal(t, tt.want, s)
 		})
 	}
@@ -172,8 +145,7 @@ func TestPunctuationRemovalFunc(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := PunctuationRemovalFunc()(tt.args.s)
-			require.NoError(t, err)
+			s := PunctuationRemovalFunc()(tt.args.s)
 			require.Equal(t, tt.want, s)
 		})
 	}
@@ -196,8 +168,7 @@ func TestNumberStandardizationFunc(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := NumberStandardizationFunc()(tt.args.s)
-			require.NoError(t, err)
+			s := NumberStandardizationFunc()(tt.args.s)
 			require.Equal(t, tt.want, s)
 		})
 	}
